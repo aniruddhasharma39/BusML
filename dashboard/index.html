@@ -22,6 +22,7 @@
                 <a href="#" data-view="eta"><i class="ri-map-pin-time-line"></i> <span>ETA Models</span></a>
                 <a href="#" data-view="hubs"><i class="ri-map-pin-user-line"></i> <span>Hub Config</span></a>
                 <a href="#" data-view="anomalies"><i class="ri-alert-line"></i> <span>Anomalies</span></a>
+                <a href="#" data-view="breakdowns"><i class="ri-tools-line"></i> <span>Breakdowns</span></a>
                 <a href="#" data-view="geofence"><i class="ri-shield-check-line"></i> <span>Safe Zones</span></a>
                 <a href="#" data-view="temporal"><i class="ri-bar-chart-box-line"></i> <span>Temporal</span></a>
                 <a href="#" data-view="hotspots"><i class="ri-map-pin-range-line"></i> <span>Hotspots</span></a>
@@ -172,9 +173,12 @@
 
                 <!-- Anomalies View (Map + Table) -->
                 <section class="card glass table-section view-section" id="view-anomalies" style="flex-direction: column;">
-                    <div class="card-header">
-                        <h2><i class="ri-error-warning-line"></i> Bus Anomalies Analysis <span class="badge">Isolation Forest</span></h2>
-                        <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Click a bus number below to plot its anomalies on this map.</p>
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div>
+                            <h2><i class="ri-error-warning-line"></i> Bus Anomalies Analysis <span class="badge">Isolation Forest</span></h2>
+                            <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Click a bus number below to plot its anomalies on this map.</p>
+                        </div>
+                        <button class="btn-icon" id="toggleAnomaliesMapBtn"><i class="ri-fullscreen-line"></i></button>
                     </div>
                     <div id="anomalies-map" class="map-container" style="height: 350px; margin-bottom: 24px;"></div>
                     
@@ -196,13 +200,15 @@
                     </div>
                 </section>
 
-                <!-- Hub Configuration Section -->
-                <section class="card glass view-section" id="view-hubs" style="display: none;">
-                    <div class="card-header">
-                        <h2><i class="ri-map-pin-user-line"></i> Global Hub Configuration</h2>
-                        <span class="badge" style="background: var(--primary);">Admin</span>
+                <section class="card glass view-section" id="view-hubs" style="display: none; flex-direction: column;">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div>
+                            <h2><i class="ri-map-pin-user-line"></i> Global Hub Configuration</h2>
+                            <span class="badge" style="background: var(--primary);">Admin</span>
+                        </div>
+                        <button class="btn-icon" id="toggleHubsMapBtn"><i class="ri-fullscreen-line"></i></button>
                     </div>
-                    <div style="padding: 20px;">
+                    <div style="padding: 20px; flex: 1; display: flex; flex-direction: column;">
                         <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Rename the auto-discovered GPS hubs to their actual city or terminal names (e.g., 'Indore', 'Mumbai'). This name will automatically map across all routes and charts.</p>
                         <div id="hubs-map" class="map-container" style="height: 300px; margin-bottom: 20px;"></div>
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -219,24 +225,53 @@
                     </div>
                 </section>
 
-                <!-- Safe Zones / Geofencing View -->
                 <section class="card glass view-section split-section" id="view-geofence" style="display: none;">
-                    <div class="split-left">
-                        <div class="card-header">
+                    <div class="split-left" style="display: flex; flex-direction: column;">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                             <div>
                                 <h2><i class="ri-map-pin-add-line"></i> Global Safe Zones Configuration</h2>
                                 <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Click anywhere on the map to whitelist a new coordinate.</p>
                             </div>
+                            <button class="btn-icon" id="toggleGeofenceMapBtn"><i class="ri-fullscreen-line"></i></button>
                         </div>
-                        <div id="geofence-map" class="map-container" style="height: 500px;"></div>
+                        <div id="geofence-map" class="map-container" style="height: 500px; flex: 1;"></div>
                     </div>
-                    <div class="split-right">
+                    <div class="split-right" style="overflow-y: auto;">
                         <div class="card-header">
                             <h2>Whitelisted Zones</h2>
                         </div>
-                        <div id="safe-zones-list" class="eta-list" style="height: 500px;">
+                        <div id="safe-zones-list" class="eta-list" style="flex: 1;">
                             <!-- Populated by JS -->
                         </div>
+                    </div>
+                </section>
+                
+                <!-- Breakdowns View -->
+                <section class="card glass table-section view-section" id="view-breakdowns" style="display: none; flex-direction: column;">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div>
+                            <h2><i class="ri-tools-line"></i> Vehicle Breakdowns & Enroute Stops</h2>
+                            <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Buses that unexpectedly ended or started journeys far from any known hub.</p>
+                        </div>
+                        <button class="btn-icon" id="toggleBreakdownsMapBtn"><i class="ri-fullscreen-line"></i></button>
+                    </div>
+                    <div id="breakdowns-map" class="map-container" style="height: 350px; margin-bottom: 24px;"></div>
+                    
+                    <div class="table-responsive">
+                        <table class="anomalies-table">
+                            <thead>
+                                <tr>
+                                    <th>Bus No.</th>
+                                    <th>Location</th>
+                                    <th>Timestamp</th>
+                                    <th>Recovery Time</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="breakdowns-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
                     </div>
                 </section>
 

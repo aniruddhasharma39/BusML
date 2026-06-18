@@ -82,19 +82,23 @@ def load_data_from_mongo():
     return journeys, journey_points, safe_zones
 
 def discover_routes_and_trajectories(journeys, journey_points):
-    print("Auto-discovering directional routes via spatial clustering...")
+    print("Auto-discovering directional routes via spatial clustering (50km)...")
     endpoints = []
+    endpoint_meta = []
     for jid, points in journey_points.items():
         if len(points) < 2: continue
         endpoints.append([points[0]['lat'], points[0]['lon']])
+        endpoint_meta.append({'jid': jid, 'bus_no': journeys[jid]['bus_no'], 'is_start': True, 'ts': points[0]['timestamp']})
+        
         endpoints.append([points[-1]['lat'], points[-1]['lon']])
+        endpoint_meta.append({'jid': jid, 'bus_no': journeys[jid]['bus_no'], 'is_start': False, 'ts': points[-1]['timestamp']})
         
     if not endpoints:
-        return {}, [], []
+        return {}, [], [], [], []
         
     X = np.radians(np.array(endpoints))
-    # 1.0/6371.0 radians ~ 1km radius for hubs
-    clusterer = DBSCAN(eps=1.0/6371.0, min_samples=2, metric='haversine')
+    # 50.0/6371.0 radians ~ 50km radius for hubs
+    clusterer = DBSCAN(eps=50.0/6371.0, min_samples=2, metric='haversine')
     labels = clusterer.fit_predict(X)
     
     unique_hubs = set(labels) - {-1}
@@ -106,7 +110,7 @@ def discover_routes_and_trajectories(journeys, journey_points):
         hubs[h] = np.degrees(center)
         hub_list.append({"id": f"Hub {h}", "lat": round(hubs[h][0], 5), "lon": round(hubs[h][1], 5)})
         
-    if len(hubs) < 2:
+    if len(hubs) < 2 and len(X) >= 2:
         hubs[0] = np.degrees(X[0])
         hubs[1] = np.degrees(X[-1])
         hub_list = [
@@ -114,6 +118,45 @@ def discover_routes_and_trajectories(journeys, journey_points):
             {"id": "Hub 1", "lat": round(hubs[1][0], 5), "lon": round(hubs[1][1], 5)}
         ]
         
+    # Extract Breakdowns
+    bus_endpoints = defaultdict(list)
+    for i, meta in enumerate(endpoint_meta):
+        meta['label'] = labels[i]
+        meta['lat'] = endpoints[i][0]
+        meta['lon'] = endpoints[i][1]
+        bus_endpoints[meta['bus_no']].append(meta)
+        
+    breakdowns = []
+    for bus_no, eps in bus_endpoints.items():
+        eps.sort(key=lambda x: x['ts'])
+        for i in range(len(eps) - 1):
+            curr_ep = eps[i]
+            next_ep = eps[i+1]
+            if curr_ep['is_start'] == False and next_ep['is_start'] == True:
+                if curr_ep['label'] == -1 or next_ep['label'] == -1:
+                    duration_hrs = (next_ep['ts'] - curr_ep['ts']) / 3600.0
+                    loc_ep = curr_ep if curr_ep['label'] == -1 else next_ep
+                    dt = datetime.fromtimestamp(curr_ep['ts'], tz=timezone.utc) + timedelta(hours=5, minutes=30)
+                    breakdowns.append({
+                        "id": f"bd_{curr_ep['jid']}_{int(curr_ep['ts'])}",
+                        "bus_no": bus_no,
+                        "lat": round(loc_ep['lat'], 5),
+                        "lon": round(loc_ep['lon'], 5),
+                        "timestamp": dt.strftime('%Y-%m-%d %H:%M'),
+                        "duration_hours": round(duration_hrs, 2)
+                    })
+        last_ep = eps[-1]
+        if last_ep['is_start'] == False and last_ep['label'] == -1:
+            dt = datetime.fromtimestamp(last_ep['ts'], tz=timezone.utc) + timedelta(hours=5, minutes=30)
+            breakdowns.append({
+                "id": f"bd_{last_ep['jid']}_{int(last_ep['ts'])}",
+                "bus_no": bus_no,
+                "lat": round(last_ep['lat'], 5),
+                "lon": round(last_ep['lon'], 5),
+                "timestamp": dt.strftime('%Y-%m-%d %H:%M'),
+                "duration_hours": "Ongoing"
+            })
+            
     journey_routes = {}
     trajectories = []
     eta_durations = defaultdict(list)
@@ -139,8 +182,9 @@ def discover_routes_and_trajectories(journeys, journey_points):
                 min_end_d = d
                 closest_end_hub = h_id
                 
+        # If it doesn't map to a hub (it's a breakdown), it's "Unknown Route"
         route_name = "Unknown Route"
-        if closest_start_hub is not None and closest_end_hub is not None and closest_start_hub != closest_end_hub:
+        if min_start_d <= 50.0 and min_end_d <= 50.0 and closest_start_hub is not None and closest_end_hub is not None and closest_start_hub != closest_end_hub:
             route_name = f"Hub {closest_start_hub} to Hub {closest_end_hub}"
             
         journey_routes[jid] = route_name
@@ -149,7 +193,6 @@ def discover_routes_and_trajectories(journeys, journey_points):
         if 1 < hrs < 30 and route_name != "Unknown Route":
             eta_durations[route_name].append(hrs)
             
-        # Trajectory compression: 1 point every 30 seconds, retaining raw timestamp
         traj = []
         last_ts = 0
         start_ts = start_pt['timestamp']
@@ -169,15 +212,11 @@ def discover_routes_and_trajectories(journeys, journey_points):
     eta_results = []
     for r_name, durs in eta_durations.items():
         if len(durs) > 0:
-            # Remove bias from extreme outliers using IQR
             q1 = np.percentile(durs, 25)
             q3 = np.percentile(durs, 75)
             iqr = q3 - q1
             filtered_durs = [d for d in durs if (q1 - 1.5 * iqr) <= d <= (q3 + 1.5 * iqr)]
-            
-            if not filtered_durs:
-                filtered_durs = durs
-                
+            if not filtered_durs: filtered_durs = durs
             avg_dur = np.mean(filtered_durs)
             eta_results.append({
                 "route": r_name,
@@ -185,7 +224,7 @@ def discover_routes_and_trajectories(journeys, journey_points):
                 "status": "On Time" if avg_dur < 16 else "Delayed"
             })
             
-    return journey_routes, eta_results, trajectories, hub_list
+    return journey_routes, eta_results, trajectories, hub_list, breakdowns
 
 def run_anomaly_detection(journeys, journey_points, safe_zones, journey_routes):
     print("Running Anomaly Detection (Isolation Forest)...")
@@ -361,7 +400,7 @@ def main():
         
     journeys, journey_points, safe_zones = load_data_from_mongo()
     
-    journey_routes, eta_preds, trajectories, hub_list = discover_routes_and_trajectories(journeys, journey_points)
+    journey_routes, eta_preds, trajectories, hub_list, breakdowns = discover_routes_and_trajectories(journeys, journey_points)
     anomalies = run_anomaly_detection(journeys, journey_points, safe_zones, journey_routes)
     hotspots = run_hotspot_identification(journey_points)
     temporal = run_temporal_analysis(journeys, journey_points, journey_routes)
@@ -377,6 +416,7 @@ def main():
     dashboard_data['temporalTraffic'] = temporal
     dashboard_data['hotspots'] = hotspots
     dashboard_data['trajectories'] = trajectories
+    dashboard_data['breakdowns'] = breakdowns
     
     # Always overwrite hubs so newly discovered hubs appear in Hub Config
     dashboard_data['hubs'] = hub_list

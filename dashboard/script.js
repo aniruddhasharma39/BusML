@@ -5,7 +5,10 @@ let globalTrajectories = [];
 let anomalyMarkers = []; 
 let globalHubs = [];
 let rawTemporalData = [];
-let appConfig = { hubNames: {}, ignoredRoutes: {}, ignoredHubs: [], safeZones: [] };
+let globalBreakdowns = [];
+let breakdownsMap;
+let breakdownMarkers = [];
+let appConfig = { hubNames: {}, ignoredRoutes: {}, ignoredHubs: [], safeZones: [], ignoredBreakdowns: [] };
 
 // Helper to translate route names based on user hub names
 function translateRoute(rawRoute) {
@@ -21,7 +24,7 @@ function translateRoute(rawRoute) {
 
 document.addEventListener("DOMContentLoaded", () => {
     Promise.all([
-        fetch('/api/config').then(r => r.json()).catch(() => ({ hubNames: {}, ignoredRoutes: {}, ignoredHubs: [], safeZones: [] })),
+        fetch('/api/config').then(r => r.json()).catch(() => ({ hubNames: {}, ignoredRoutes: {}, ignoredHubs: [], safeZones: [], ignoredBreakdowns: [] })),
         fetch('data.json.gz')
             .then(r => {
                 const ds = new DecompressionStream('gzip');
@@ -54,6 +57,8 @@ document.addEventListener("DOMContentLoaded", () => {
             safeZonesData = data.safeZones || [];
             globalTrajectories = (data.trajectories || []).filter(t => !isRouteIgnored(t.route));
             globalHubs = (data.hubs || []).filter(h => !ignoredHubs.includes(h.id));
+            let ignoredBreakdowns = appConfig.ignoredBreakdowns || [];
+            globalBreakdowns = (data.breakdowns || []).filter(b => !ignoredBreakdowns.includes(b.id));
             rawTemporalData = (data.temporalTraffic || []).filter(t => !isRouteIgnored(t.route));
             let etaPreds = (data.etaPredictions || []).filter(p => !isRouteIgnored(p.route));
             
@@ -61,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
             initHubConfig();
             initGlobalMap(data.hotspots);
             initAnomaliesMap();
+            initBreakdowns();
             initETAModels(etaPreds);
             renderAnomaliesTable();
             Dashboard.initGeofenceMap();
@@ -103,7 +109,7 @@ function setupNavigation() {
             document.querySelectorAll('.view-section').forEach(sec => sec.style.display = 'none');
             
             if (view === 'all') {
-                document.querySelectorAll('.view-section:not(.split-section):not(#view-hubs):not(#view-eta)').forEach(sec => sec.style.display = 'flex');
+                document.querySelectorAll('.view-section:not(.split-section):not(#view-hubs):not(#view-eta):not(#view-breakdowns)').forEach(sec => sec.style.display = 'flex');
                 document.getElementById('view-anomalies').style.display = 'none';
             } else {
                 let target = document.getElementById('view-' + view);
@@ -112,6 +118,7 @@ function setupNavigation() {
                 if(view === 'geofence') setTimeout(() => Dashboard.geofenceMap.invalidateSize(), 100);
                 if(view === 'hubs') setTimeout(() => hubsMap.invalidateSize(), 100);
                 if(view === 'eta') setTimeout(() => etaMap.invalidateSize(), 100);
+                if(view === 'breakdowns') setTimeout(() => breakdownsMap.invalidateSize(), 100);
             }
         });
     });
@@ -131,6 +138,7 @@ function initHubConfig() {
     if (!list) return;
     
     hubsMap = createMapWithLayers('hubs-map', [22.7196, 75.8577], 5);
+    setupFullscreenToggle('toggleHubsMapBtn', 'view-hubs', hubsMap);
     
     let savedHubs = appConfig.hubNames || {};
     let markers = [];
@@ -489,7 +497,61 @@ function initTemporalAnalysis() {
 let anomaliesMap;
 function initAnomaliesMap() {
     anomaliesMap = createMapWithLayers('anomalies-map', [22.7196, 75.8577], 6);
+    setupFullscreenToggle('toggleAnomaliesMapBtn', 'view-anomalies', anomaliesMap);
 }
+
+function initBreakdowns() {
+    breakdownsMap = createMapWithLayers('breakdowns-map', [22.7196, 75.8577], 6);
+    setupFullscreenToggle('toggleBreakdownsMapBtn', 'view-breakdowns', breakdownsMap);
+    
+    const tbody = document.getElementById("breakdowns-body");
+    if(!tbody) return;
+    tbody.innerHTML = '';
+    
+    const bdIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: `<div style='background-color:#f59e0b; width:16px; height:16px; border-radius:50%; border:2px solid #fff; box-shadow: 0 0 10px #f59e0b;'></div>`,
+        iconSize: [16, 16]
+    });
+
+    globalBreakdowns.forEach(b => {
+        let marker = L.marker([b.lat, b.lon], {icon: bdIcon}).addTo(breakdownsMap);
+        marker.bindPopup(`<b>Bus ${b.bus_no} Breakdown</b><br>Time: ${b.timestamp}<br>Recovery: ${b.duration_hours}h`);
+        breakdownMarkers.push(marker);
+        
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><span class="bus-row-link" onclick="focusBusOnBreakdownsMap('${b.id}')"><i class="ri-bus-line"></i> ${b.bus_no}</span></td>
+            <td>${b.lat}, ${b.lon}</td>
+            <td>${b.timestamp}</td>
+            <td><strong style="color:var(--accent-orange);">${b.duration_hours}h</strong></td>
+            <td><button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" onclick="deleteBreakdown('${b.id}')"><i class="ri-close-line"></i> Ignore</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    if(breakdownMarkers.length > 0) {
+        let group = new L.featureGroup(breakdownMarkers);
+        breakdownsMap.fitBounds(group.getBounds().pad(0.1));
+    }
+}
+
+window.focusBusOnBreakdownsMap = function(bdId) {
+    let b = globalBreakdowns.find(x => x.id === bdId);
+    if(b) { breakdownsMap.setView([b.lat, b.lon], 12); }
+};
+
+window.deleteBreakdown = function(bdId) {
+    if(confirm("Ignore this breakdown event? It will be removed from the dashboard.")) {
+        if(!appConfig.ignoredBreakdowns) appConfig.ignoredBreakdowns = [];
+        appConfig.ignoredBreakdowns.push(bdId);
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ignoredBreakdowns: appConfig.ignoredBreakdowns })
+        }).then(() => location.reload());
+    }
+};
 
 let etaMap;
 function initETAModels(predictions) {
@@ -605,6 +667,7 @@ const Dashboard = {
     
     initGeofenceMap() {
         this.geofenceMap = createMapWithLayers('geofence-map', [22.7196, 75.8577], 6);
+        setupFullscreenToggle('toggleGeofenceMapBtn', 'view-geofence', this.geofenceMap);
 
         this.renderSafeZonesOnMap();
 
@@ -713,8 +776,30 @@ window.saveHubNameFromPopup = function(hubId) {
     if(val) {
         let savedHubs = appConfig.hubNames || {};
         savedHubs[hubId] = val;
-        localStorage.setItem('hubNames', JSON.stringify(savedHubs));
-        alert("Hub name saved! Dashboard will now reload.");
-        location.reload();
+        appConfig.hubNames = savedHubs;
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hubNames: appConfig.hubNames })
+        }).then(() => {
+            alert("Hub name saved! Dashboard will now reload.");
+            location.reload();
+        });
     }
 };
+
+function setupFullscreenToggle(btnId, sectionId, mapObj) {
+    const btn = document.getElementById(btnId);
+    const sec = document.getElementById(sectionId);
+    if(btn && sec && mapObj) {
+        btn.addEventListener('click', () => {
+            sec.classList.toggle('fullscreen');
+            if (sec.classList.contains('fullscreen')) {
+                btn.innerHTML = '<i class="ri-fullscreen-exit-line"></i>';
+            } else {
+                btn.innerHTML = '<i class="ri-fullscreen-line"></i>';
+            }
+            setTimeout(() => mapObj.invalidateSize(), 300);
+        });
+    }
+}

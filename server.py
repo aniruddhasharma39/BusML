@@ -28,7 +28,8 @@ def get_config_doc():
             "hubNames": {},
             "ignoredRoutes": {},
             "ignoredHubs": [],
-            "safeZones": []
+            "safeZones": [],
+            "ignoredBreakdowns": []
         }
         config_col.insert_one(doc)
     return doc
@@ -49,6 +50,7 @@ def update_config():
     if "ignoredRoutes" in data: update_fields["ignoredRoutes"] = data["ignoredRoutes"]
     if "ignoredHubs" in data: update_fields["ignoredHubs"] = data["ignoredHubs"]
     if "safeZones" in data: update_fields["safeZones"] = data["safeZones"]
+    if "ignoredBreakdowns" in data: update_fields["ignoredBreakdowns"] = data["ignoredBreakdowns"]
     
     if update_fields:
         config_col.update_one({"_id": "global_config"}, {"$set": update_fields}, upsert=True)
