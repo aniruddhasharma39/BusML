@@ -352,14 +352,16 @@ def run_temporal_analysis(journeys, journey_points, journey_routes):
     df = pd.DataFrame(raw_data)
     
     # Remove extreme outliers for each route to remove noise/bias
-    def remove_outliers(group):
+    df_clean = df.copy()
+    df_clean['is_outlier'] = False
+    for route, group in df.groupby('route'):
         q1 = group['duration'].quantile(0.25)
         q3 = group['duration'].quantile(0.75)
         iqr = q3 - q1
-        return group[(group['duration'] >= q1 - 1.5 * iqr) & (group['duration'] <= q3 + 1.5 * iqr)]
+        mask = (group['duration'] < q1 - 1.5 * iqr) | (group['duration'] > q3 + 1.5 * iqr)
+        df_clean.loc[group.index, 'is_outlier'] = mask
         
-    # Pandas groupby handles DeprecationWarnings better without include_groups
-    df_clean = df.groupby('route', group_keys=False).apply(remove_outliers)
+    df_clean = df_clean[df_clean['is_outlier'] == False].drop(columns=['is_outlier'])
     if df_clean.empty: df_clean = df
     
     # Train a RandomForestRegressor to predict duration based on day, route, and bus_no
