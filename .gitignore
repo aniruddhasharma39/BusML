@@ -1,0 +1,11 @@
+# Ignore large raw data files
+dashboard/data.json
+fleet_db.*.json
+local.oplog.rs.json
+
+# Keep compressed data
+!dashboard/data.json.gz
+
+# Python cache
+__pycache__/
+*.pyc

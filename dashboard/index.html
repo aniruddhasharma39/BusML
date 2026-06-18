@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fleet ML Analytics Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="ri-route-fill"></i>
+                <span>NavaRasa AI</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="active" data-view="all"><i class="ri-dashboard-line"></i> <span>Dashboard</span></a>
+                <a href="#" data-view="eta"><i class="ri-map-pin-time-line"></i> <span>ETA Models</span></a>
+                <a href="#" data-view="hubs"><i class="ri-map-pin-user-line"></i> <span>Hub Config</span></a>
+                <a href="#" data-view="anomalies"><i class="ri-alert-line"></i> <span>Anomalies</span></a>
+                <a href="#" data-view="geofence"><i class="ri-shield-check-line"></i> <span>Safe Zones</span></a>
+                <a href="#" data-view="temporal"><i class="ri-bar-chart-box-line"></i> <span>Temporal</span></a>
+                <a href="#" data-view="hotspots"><i class="ri-map-pin-range-line"></i> <span>Hotspots</span></a>
+            </nav>
+            <div class="sidebar-bottom">
+                <div class="user-profile">
+                    <img src="https://ui-avatars.com/api/?name=Admin+User&background=3b82f6&color=fff" alt="User">
+                    <div>
+                        <h4>Admin Manager</h4>
+                        <p>Operations Dept.</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <div>
+                    <h1 id="page-title">Fleet Intelligence</h1>
+                    <p id="page-subtitle">Machine Learning Operations Overview</p>
+                </div>
+                <div class="header-actions">
+                    <div class="status-indicator">
+                        <span class="dot pulse"></span> <span class="hide-mobile">Live System</span>
+                    </div>
+                    <button class="btn-primary"><i class="ri-download-cloud-2-line"></i> <span class="hide-mobile">Export Report</span></button>
+                </div>
+            </header>
+
+            <!-- KPI Cards -->
+            <section class="kpi-grid" id="kpi-section">
+                <div class="kpi-card glass">
+                    <div class="kpi-icon blue"><i class="ri-bus-wifi-line"></i></div>
+                    <div class="kpi-info">
+                        <h3>Active Buses</h3>
+                        <h2 id="kpi-buses">--</h2>
+                    </div>
+                </div>
+                <div class="kpi-card glass">
+                    <div class="kpi-icon purple"><i class="ri-route-line"></i></div>
+                    <div class="kpi-info">
+                        <h3>Monitored Journeys</h3>
+                        <h2 id="kpi-journeys">--</h2>
+                    </div>
+                </div>
+                <div class="kpi-card glass">
+                    <div class="kpi-icon orange"><i class="ri-alarm-warning-line"></i></div>
+                    <div class="kpi-info">
+                        <h3>Detected Anomalies</h3>
+                        <h2 id="kpi-anomalies">--</h2>
+                    </div>
+                </div>
+                <div class="kpi-card glass">
+                    <div class="kpi-icon red"><i class="ri-map-pin-range-line"></i></div>
+                    <div class="kpi-info">
+                        <h3>Delay Hotspots</h3>
+                        <h2 id="kpi-hotspots">--</h2>
+                    </div>
+                </div>
+            </section>
+
+            <div class="dashboard-grid" id="main-grid">
+                <!-- Global Map Section (Hotspots) -->
+                <section class="card glass map-section view-section" id="view-hotspots" style="flex-direction: column;">
+                    <div class="card-header" style="flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h2><i class="ri-map-2-line"></i> Geospatial POI Analysis & Delay Hotspots</h2>
+                            <button class="btn-icon" id="toggleMapBtn"><i class="ri-fullscreen-line"></i></button>
+                        </div>
+                        <div class="filter-bar" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            <select id="poi-filter-route" class="select-action" style="flex: 1; min-width: 150px;">
+                                <option value="All">All Routes</option>
+                                <option value="Hub 0 to Hub 1">Hub 0 to Hub 1</option>
+                                <option value="Hub 1 to Hub 0">Hub 1 to Hub 0</option>
+                            </select>
+                            <select id="poi-filter-bus" class="select-action" style="flex: 1; min-width: 150px;">
+                                <option value="All">All Buses</option>
+                                <option value="MP09AM9990">MP09AM9990</option>
+                                <option value="MP09AM9909">MP09AM9909</option>
+                            </select>
+                            <button class="btn-primary" id="poi-clear-filters" style="padding: 6px 12px; font-size: 13px;">Clear Filters</button>
+                        </div>
+                        <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Click anywhere on the map to query the historical database and generate a reach-time analysis table for that exact coordinate.</p>
+                    </div>
+                    <div id="map" class="map-container" style="height: 350px;"></div>
+                    
+                    <div id="poi-analysis-container" style="display: none; margin-top: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 12px;">
+                            <h3 style="font-size: 16px;">POI Reach Time Analysis</h3>
+                            <button id="poi-collapse-btn" class="btn-sm" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);"><i class="ri-arrow-up-s-line"></i> Collapse Table</button>
+                        </div>
+                        <div class="kpi-grid" style="margin-bottom: 16px; grid-template-columns: 1fr 1fr 1fr;">
+                            <div class="kpi-card glass" style="padding: 16px;">
+                                <div class="kpi-info">
+                                    <h3>Avg Time of Day (IST)</h3>
+                                    <h2 id="poi-avg-timeofday" style="color: var(--secondary);">--</h2>
+                                </div>
+                            </div>
+                            <div class="kpi-card glass" style="padding: 16px;">
+                                <div class="kpi-info">
+                                    <h3>Average Duration</h3>
+                                    <h2 id="poi-avg-time" style="color: var(--primary);">--</h2>
+                                </div>
+                            </div>
+                            <div class="kpi-card glass" style="padding: 16px;">
+                                <div class="kpi-info">
+                                    <h3>Maximum Delay (Worst)</h3>
+                                    <h2 id="poi-max-time" style="color: var(--accent-red);">--</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                            <table class="anomalies-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Bus No.</th>
+                                        <th>Route</th>
+                                        <th>Time of Day (IST)</th>
+                                        <th>Time to Reach</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="poi-table-body">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Temporal Analysis Chart -->
+                <section class="card glass view-section" id="view-dashboard" style="grid-column: 2 / 3; grid-row: 1 / 2; display: flex; flex-direction: column;">
+                    <div class="card-header">
+                        <h2><i class="ri-bar-chart-grouped-line"></i> Route & Bus Traffic Analysis</h2>
+                    </div>
+                    <div class="filter-bar" style="display: flex; gap: 8px; padding: 0 20px; margin-bottom: 12px;">
+                        <select id="temporal-filter-route" class="select-action" style="flex: 1; padding: 4px; font-size: 12px;">
+                            <option value="All">All Routes</option>
+                        </select>
+                        <select id="temporal-filter-bus" class="select-action" style="flex: 1; padding: 4px; font-size: 12px;">
+                            <option value="All">All Buses</option>
+                        </select>
+                    </div>
+                    <div class="chart-container" style="flex: 1; padding: 0 20px 20px 20px;">
+                        <canvas id="temporalChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- Anomalies View (Map + Table) -->
+                <section class="card glass table-section view-section" id="view-anomalies" style="flex-direction: column;">
+                    <div class="card-header">
+                        <h2><i class="ri-error-warning-line"></i> Bus Anomalies Analysis <span class="badge">Isolation Forest</span></h2>
+                        <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Click a bus number below to plot its anomalies on this map.</p>
+                    </div>
+                    <div id="anomalies-map" class="map-container" style="height: 350px; margin-bottom: 24px;"></div>
+                    
+                    <div class="table-responsive">
+                        <table class="anomalies-table">
+                            <thead>
+                                <tr>
+                                    <th>Bus No.</th>
+                                    <th>Route</th>
+                                    <th>Total Stops</th>
+                                    <th>Total Delay</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="anomalies-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Hub Configuration Section -->
+                <section class="card glass view-section" id="view-hubs" style="display: none;">
+                    <div class="card-header">
+                        <h2><i class="ri-map-pin-user-line"></i> Global Hub Configuration</h2>
+                        <span class="badge" style="background: var(--primary);">Admin</span>
+                    </div>
+                    <div style="padding: 20px;">
+                        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Rename the auto-discovered GPS hubs to their actual city or terminal names (e.g., 'Indore', 'Mumbai'). This name will automatically map across all routes and charts.</p>
+                        <div id="hubs-map" class="map-container" style="height: 300px; margin-bottom: 20px;"></div>
+                        <div id="hubs-list" style="display: flex; flex-direction: column; gap: 16px;">
+                            <!-- Dynamically populated hubs -->
+                        </div>
+                        <h3 style="margin-top: 32px; margin-bottom: 16px;">Active Routes</h3>
+                        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">Uncheck routes below to completely ignore unwanted permutations across the dashboard.</p>
+                        <div id="routes-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                        <button class="btn-primary" id="save-hubs-btn" style="margin-top: 24px;"><i class="ri-save-line"></i> Save Configuration</button>
+                    </div>
+                </section>
+
+                <!-- Safe Zones / Geofencing View -->
+                <section class="card glass view-section split-section" id="view-geofence" style="display: none;">
+                    <div class="split-left">
+                        <div class="card-header">
+                            <div>
+                                <h2><i class="ri-map-pin-add-line"></i> Global Safe Zones Configuration</h2>
+                                <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Click anywhere on the map to whitelist a new coordinate.</p>
+                            </div>
+                        </div>
+                        <div id="geofence-map" class="map-container" style="height: 500px;"></div>
+                    </div>
+                    <div class="split-right">
+                        <div class="card-header">
+                            <h2>Whitelisted Zones</h2>
+                        </div>
+                        <div id="safe-zones-list" class="eta-list" style="height: 500px;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ETA Predictions -->
+                <section class="card glass eta-section view-section" id="view-eta" style="display: none; flex-direction: column;">
+                    <div class="card-header" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+                        <h2><i class="ri-timer-flash-line"></i> Route ETAs <span class="badge">XGBoost</span></h2>
+                        <button class="btn-icon" id="toggleEtaMapBtn"><i class="ri-fullscreen-line"></i></button>
+                    </div>
+                    <div id="eta-map" class="map-container" style="height: 350px; margin-bottom: 20px;"></div>
+                    <div class="eta-list" id="eta-list" style="flex: 1; overflow-y: auto;">
+                        <!-- Populated by JS -->
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Custom Modal for adding Safe Zone -->
+    <div id="safe-zone-modal" class="modal-overlay">
+        <div class="modal-content glass">
+            <h3><i class="ri-map-pin-add-line"></i> Add Safe Zone</h3>
+            <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">Confirm the details for the pinned location.</p>
+            <input type="text" id="sz-name" placeholder="Name (e.g., Toll Plaza Parking)" class="modal-input" />
+            <select id="sz-type" class="modal-input">
+                <option value="Fuel Stop">Fuel Stop</option>
+                <option value="Rest Stop">Rest Stop</option>
+                <option value="Parking">Parking</option>
+            </select>
+            <input type="hidden" id="sz-lat">
+            <input type="hidden" id="sz-lon">
+            <div class="modal-actions">
+                <button id="sz-cancel" class="btn-secondary">Cancel</button>
+                <button id="sz-save" class="btn-primary">Save Zone</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
