@@ -78,6 +78,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
+function createMapWithLayers(containerId, center, zoom) {
+    let darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap', subdomains: 'abcd', maxZoom: 20
+    });
+    let satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri', maxZoom: 18
+    });
+    let map = L.map(containerId, { center: center, zoom: zoom, layers: [darkLayer] });
+    L.control.layers({"Dark Map": darkLayer, "Satellite": satelliteLayer}).addTo(map);
+    return map;
+}
+
 function setupNavigation() {
     const links = document.querySelectorAll('.nav-menu a');
     links.forEach(link => {
@@ -87,6 +99,7 @@ function setupNavigation() {
             e.currentTarget.classList.add('active');
             
             const view = e.currentTarget.getAttribute('data-view');
+            sessionStorage.setItem('activeTab', view);
             document.querySelectorAll('.view-section').forEach(sec => sec.style.display = 'none');
             
             if (view === 'all') {
@@ -102,6 +115,11 @@ function setupNavigation() {
             }
         });
     });
+    let savedTab = sessionStorage.getItem('activeTab');
+    if(savedTab) {
+        let active = document.querySelector('.nav-menu a[data-view="'+savedTab+'"]');
+        if(active) { active.click(); return; }
+    }
     let active = document.querySelector('.nav-menu a.active');
     if(active) active.click();
 }
@@ -112,8 +130,7 @@ function initHubConfig() {
     const list = document.getElementById('hubs-list');
     if (!list) return;
     
-    hubsMap = L.map('hubs-map').setView([22.7196, 75.8577], 5);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(hubsMap);
+    hubsMap = createMapWithLayers('hubs-map', [22.7196, 75.8577], 5);
     
     let savedHubs = appConfig.hubNames || {};
     let markers = [];
@@ -136,6 +153,7 @@ function initHubConfig() {
         
         let html = `
             <div style="display: flex; gap: 12px; align-items: center; background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                <input type="checkbox" class="hub-delete-cb" data-id="${h.id}" style="width: 16px; height: 16px; cursor: pointer;">
                 <div style="flex: 1;">
                     <label style="font-size: 12px; color: var(--text-muted);">${h.id} (${h.lat}, ${h.lon})</label>
                     <input type="text" id="hub-input-${h.id.replace(' ','')}" class="input-modern" value="${currentName}" style="width: 100%; margin-top: 4px;">
@@ -191,6 +209,39 @@ function initHubConfig() {
             location.reload();
         });
     });
+
+    const delSelectedBtn = document.getElementById('delete-selected-hubs-btn');
+    if (delSelectedBtn) {
+        delSelectedBtn.addEventListener('click', () => {
+            let selected = document.querySelectorAll('.hub-delete-cb:checked');
+            if (selected.length === 0) {
+                alert("Please select at least one hub to delete.");
+                return;
+            }
+            if (confirm(`Are you sure you want to delete the ${selected.length} selected hub(s)?`)) {
+                if (!appConfig.ignoredHubs) appConfig.ignoredHubs = [];
+                let changed = false;
+                selected.forEach(cb => {
+                    let id = cb.getAttribute('data-id');
+                    if (!appConfig.ignoredHubs.includes(id)) {
+                        appConfig.ignoredHubs.push(id);
+                        changed = true;
+                    }
+                });
+                if (changed) {
+                    fetch('/api/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ignoredHubs: appConfig.ignoredHubs })
+                    }).then(() => {
+                        location.reload();
+                    });
+                } else {
+                    location.reload();
+                }
+            }
+        });
+    }
 }
 
 function initKPIs(kpis) {
@@ -224,10 +275,7 @@ function getHaversine(lat1, lon1, lat2, lon2) {
 
 let globalHotspotMap;
 function initGlobalMap(hotspots) {
-    globalHotspotMap = L.map('map', { zoomControl: true }).setView([20.9042, 74.7749], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap', subdomains: 'abcd', maxZoom: 20
-    }).addTo(globalHotspotMap);
+    globalHotspotMap = createMapWithLayers('map', [20.9042, 74.7749], 6);
 
     const hotspotIcon = L.divIcon({
         className: 'custom-div-icon',
@@ -440,10 +488,7 @@ function initTemporalAnalysis() {
 
 let anomaliesMap;
 function initAnomaliesMap() {
-    anomaliesMap = L.map('anomalies-map').setView([22.7196, 75.8577], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap', subdomains: 'abcd', maxZoom: 20
-    }).addTo(anomaliesMap);
+    anomaliesMap = createMapWithLayers('anomalies-map', [22.7196, 75.8577], 6);
 }
 
 let etaMap;
@@ -452,8 +497,7 @@ function initETAModels(predictions) {
     if(!list) return;
     list.innerHTML = '';
     
-    etaMap = L.map('eta-map').setView([22.7196, 75.8577], 5);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(etaMap);
+    etaMap = createMapWithLayers('eta-map', [22.7196, 75.8577], 5);
     
     let allPaths = [];
     globalTrajectories.forEach(t => {
@@ -560,10 +604,7 @@ const Dashboard = {
     tempMarker: null,
     
     initGeofenceMap() {
-        this.geofenceMap = L.map('geofence-map').setView([22.7196, 75.8577], 6);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            maxZoom: 20
-        }).addTo(this.geofenceMap);
+        this.geofenceMap = createMapWithLayers('geofence-map', [22.7196, 75.8577], 6);
 
         this.renderSafeZonesOnMap();
 

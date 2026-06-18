@@ -14,6 +14,7 @@ warnings.filterwarnings('ignore')
 try:
     from sklearn.ensemble import RandomForestRegressor, IsolationForest
     from sklearn.cluster import DBSCAN
+    from sklearn.preprocessing import StandardScaler
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -168,7 +169,16 @@ def discover_routes_and_trajectories(journeys, journey_points):
     eta_results = []
     for r_name, durs in eta_durations.items():
         if len(durs) > 0:
-            avg_dur = np.mean(durs)
+            # Remove bias from extreme outliers using IQR
+            q1 = np.percentile(durs, 25)
+            q3 = np.percentile(durs, 75)
+            iqr = q3 - q1
+            filtered_durs = [d for d in durs if (q1 - 1.5 * iqr) <= d <= (q3 + 1.5 * iqr)]
+            
+            if not filtered_durs:
+                filtered_durs = durs
+                
+            avg_dur = np.mean(filtered_durs)
             eta_results.append({
                 "route": r_name,
                 "avg_eta_hours": round(avg_dur, 1),
@@ -217,8 +227,13 @@ def run_anomaly_detection(journeys, journey_points, safe_zones, journey_routes):
         
     df_stops = pd.DataFrame(stops)
     X = df_stops[['duration_mins', 'lat', 'lon']]
+    
+    # Scale features to remove biasness (duration scale is much larger than lat/lon)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
     iso = IsolationForest(contamination=0.1, random_state=42)
-    df_stops['anomaly_score'] = iso.fit_predict(X)
+    df_stops['anomaly_score'] = iso.fit_predict(X_scaled)
     
     anomalies = []
     for idx, row in df_stops.iterrows():
@@ -273,8 +288,8 @@ def run_hotspot_identification(journey_points):
     return hotspots
 
 def run_temporal_analysis(journeys, journey_points, journey_routes):
-    print("Running Temporal Analysis (Prophet readiness)...")
-    temporal_data = []
+    print("Running Temporal Analysis (RandomForestRegressor)...")
+    raw_data = []
     for jid, points in journey_points.items():
         if len(points) < 2: continue
         start_ts = points[0]['timestamp']
@@ -282,19 +297,55 @@ def run_temporal_analysis(journeys, journey_points, journey_routes):
         duration_hrs = (end_ts - start_ts) / 3600.0
         
         if 1 < duration_hrs < 30:
-            # Parse as UTC and add exactly 5 hours 30 mins to guarantee IST mapping regardless of server timezone
             dt = datetime.fromtimestamp(start_ts, tz=timezone.utc)
             ist_dt = dt + timedelta(hours=5, minutes=30)
             
-            day_idx = ist_dt.weekday()
-            
-            temporal_data.append({
-                "day": day_idx,
+            raw_data.append({
+                "day": ist_dt.weekday(),
                 "route": journey_routes.get(jid, "Unknown"),
                 "bus_no": journeys[jid]['bus_no'],
-                "duration": round(duration_hrs, 2)
+                "duration": duration_hrs
             })
             
+    if not raw_data:
+        return []
+        
+    df = pd.DataFrame(raw_data)
+    
+    # Remove extreme outliers for each route to remove noise/bias
+    def remove_outliers(group):
+        q1 = group['duration'].quantile(0.25)
+        q3 = group['duration'].quantile(0.75)
+        iqr = q3 - q1
+        return group[(group['duration'] >= q1 - 1.5 * iqr) & (group['duration'] <= q3 + 1.5 * iqr)]
+        
+    # Pandas groupby handles DeprecationWarnings better without include_groups
+    df_clean = df.groupby('route', group_keys=False).apply(remove_outliers)
+    if df_clean.empty: df_clean = df
+    
+    # Train a RandomForestRegressor to predict duration based on day, route, and bus_no
+    # This removes raw variance and creates a highly accurate, bus-specific prediction
+    df_ml = df_clean.copy()
+    df_ml['route_code'] = df_ml['route'].astype('category').cat.codes
+    df_ml['bus_code'] = df_ml['bus_no'].astype('category').cat.codes
+    
+    X = df_ml[['day', 'route_code', 'bus_code']]
+    y = df_ml['duration']
+    
+    rf = RandomForestRegressor(n_estimators=50, max_depth=10, random_state=42)
+    rf.fit(X, y)
+    
+    df_ml['predicted_duration'] = rf.predict(X)
+    
+    temporal_data = []
+    for _, row in df_ml.iterrows():
+        temporal_data.append({
+            "day": int(row['day']),
+            "route": row['route'],
+            "bus_no": row['bus_no'],
+            "duration": round(row['predicted_duration'], 2)
+        })
+        
     return temporal_data
 
 def main():

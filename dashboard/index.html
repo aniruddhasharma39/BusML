@@ -205,6 +205,10 @@
                     <div style="padding: 20px;">
                         <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Rename the auto-discovered GPS hubs to their actual city or terminal names (e.g., 'Indore', 'Mumbai'). This name will automatically map across all routes and charts.</p>
                         <div id="hubs-map" class="map-container" style="height: 300px; margin-bottom: 20px;"></div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h3 style="margin: 0; font-size: 16px;">Hubs List</h3>
+                            <button id="delete-selected-hubs-btn" class="btn-secondary" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: none; padding: 6px 12px; font-size: 13px; border-radius: 6px;"><i class="ri-delete-bin-line"></i> Delete Selected</button>
+                        </div>
                         <div id="hubs-list" style="display: flex; flex-direction: column; gap: 16px;">
                             <!-- Dynamically populated hubs -->
                         </div>
